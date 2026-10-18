@@ -1,0 +1,11 @@
+{
+  "name": "wk-item-difficulty",
+  "private": true,
+  "description": "Dev tooling for main.js (tests and the data build; the userscript has no build step).",
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test",
+    "build-data": "node tools/build-data.mjs --report"
+  },
+  "engines": { "node": ">=20" }
+}
