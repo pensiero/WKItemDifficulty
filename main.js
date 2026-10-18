@@ -1,14 +1,10 @@
 // ==UserScript==
 // @name         WaniKani Item Difficulty
 // @namespace    wk-item-diff
-// @version      0.23
+// @version      0.23.1
 // @description  Add difficulty ratings collected from forum datasets to items in WaniKani lessons and reviews.
-// @author       saraqael
-// @match        https://www.wanikani.com/radicals*
-// @match        https://www.wanikani.com/kanji*
-// @match        https://www.wanikani.com/vocabulary*
-// @match        https://www.wanikani.com/subjects*
-// @match        https://www.wanikani.com/subject-lessons*
+// @author       saraqael (modified by Inserio)
+// @match        https://www.wanikani.com/*
 // @grant        none
 // @license      MIT
 // @require      https://greasyfork.org/scripts/430565-wanikani-item-info-injector/code/WaniKani%20Item%20Info%20Injector.user.js?version=1166918
@@ -17,26 +13,30 @@
 //// SETTINGS ////
 
 const USE_WKOF_SETTINGS = true; // if the settings from the wkof menu should be used when it is available
-const OFFSET_SRS_POPUP = false; // if the srs level-up popup should be made smaller for the hover text of the indicator to still be usable
+const OFFSET_SRS_POPUP = true; // if the srs level-up popup should be made smaller for the hover text of the indicator to still be usable
 
 // changing these settings also changes their default values which the wkof settings menu uses
 const defaultSettings = {
-    INDICATOR_REVIEW_POS: 'info', // where the indicator is placed while doing reviews; options are 'none', 'info', and 'main'
-    HIDE_UNTIL_ANSWER: true, // hide the difficulty rating until an answer is given for the item
-    SHOW_ON_INFO_PAGE: true, // show the indicator on the info page of the respective item
+    INDICATOR_REVIEW_POS: 'main', // where the indicator is placed while doing reviews; options are 'none', 'info', and 'main'
+    HIDE_UNTIL_ANSWER: false, // hide the difficulty rating until an answer is given for the item
+    SHOW_ON_INFO_PAGE: false, // show the indicator on the info page of the respective item
     GLOWING_INDICATOR: true, // glow appears around the indicator to simulate a "traffic light" feel
     BOX_INDICATOR: true, // have the gray box be around the indicator to make it stand out
     SHOW_DECIMALS: false, // show tenths place for the number inside the indicator
     INDICATOR_SIZE: 1, // percentage for size of difficulty indicator; default (1) corresponds to 50 pixels
-    VALUE_OPACITY: 0.83, // opacity of the value inside the difficulty indicator (1 is not visible, 0 is black)
+    TEXT_COLOR: 'gray', // color to use instead of the automatic text color for the number
+    TEXT_BRIGHTNESS: 83, // brightness of the text value inside the difficulty indicator (0 is black, 100 has no effect, >100 brightens it)
     DIFF_COLORS: { // color codes for different difficulty levels
-        null: '#7a7a7a', // used when no difficulty info is present (default: gray #7a7a7a)
-        00:   '#3cc92e', // 0.0 -  0.9: easy (default: green #3cc92e)
-        10:   '#e8c741', // 1.0 -  2.4: medium (default: yellow #e8c741)
-        25:   '#ea7a34', // 2.5 -  4.9: hard (default: orange #ea7a34)
-        50:   '#d43526', // 5.0 - 10.0: extreme (default: red #d43526)
+        null: {Start: '#7a7a7a'}, // used when no difficulty info is present (default: gray #7a7a7a)
+        0:    {Start: '#3886da', End: '#6dddee'}, // 0.0 - 0.9: easy (default: green #3cc92e)
+        10:   {Start: '#77df61', End: '#69ddb7'}, // 1.0 - 2.4: medium (default: yellow #e8c741)
+        25:   {Start: '#f3ab3d', End: '#f9d849'}, // 2.5 - 4.9: hard (default: orange #ea7a34)
+        50:   {Start: '#eb4249', End: '#ee7732'}, // 5.0 - 7.4: extreme (default: red #d43526)
+        75:   {Start: '#14010e', End: '#560c08'}, // 7.5 - 10.0: hell (dark pink)
     },
-}
+    USE_GRADIENT: true, // use a gradient or use only a solid color
+    REVERSE_GRADIENT: false // swap the colors of the gradient
+};
 
 //// DIFFICULTY DATA ////
 
@@ -55,14 +55,8 @@ const mainDivId = 'wk-item-difficulty-main'; // id for main div
 const wkofScriptId = 'wk_item_diff_script'; // script id for wkof settings
 const wkofScriptTitle = 'Item Difficulty Indicator'; // script name for wkof settings
 const itemInfoTitle = 'Difficulty'; // title in info page / review item info
+const pathsRegex = /^\/(radicals|kanji|subjects|subject-lessons).*$/;
 
-const wkItemInfo = window.wkItemInfo; // WaniKani Item Info Injector
-const wkof = window.wkof; // WaniKani Open Framework
-
-// find out if page is lesson, review, or word info
-const pageType = window.location.pathname.includes('review') ? 'review' : (window.location.pathname.includes('extra_study') ? 'extra_study' : (window.location.pathname.includes('subject') ? 'lesson' : 'info'));
-// if word info which type of item
-const infoType = pageType != 'info' ? undefined : (window.location.pathname.includes('radical') ? 'rad' : (window.location.pathname.includes('kanji') ? 'kan' : 'voc'));
 // is Firefox browser
 const isFirefox = typeof InstallTrigger !== 'undefined';
 
@@ -70,27 +64,37 @@ const isFirefox = typeof InstallTrigger !== 'undefined';
 const getItemDiff = (char, dict) => Object.values(dict).findIndex(s => s.includes(char)); // get item difficulty from dict
 const diffToColor = diff => settings.DIFF_COLORS[Object.keys(settings.DIFF_COLORS).sort((a, b) => parseInt(b) - parseInt(a)).find(n => diff >= parseInt(n)) || null];
 const diffToStr = (diff, decimals = 1, includeTotal = true) => Math.max(diff/10, 0).toFixed(decimals) + (includeTotal ? '/10' : '');
-const innerDiffDiv = (color, value) => `<div style="width: 24px; height: 24px; border-radius: 12px; margin: 13px; position: absolute; box-shadow: 0 0 6px 6px ${color}; opacity: 0.7${settings.GLOWING_INDICATOR && color != settings.DIFF_COLORS.null ? '' : '; display: none'}"></div><div style="width: 26px; height: 26px; background: ${color} !important; border-radius: 13px; margin: 12px; position: absolute"></div><div style="width: 30px; height: 18px; margin-left: 10px; margin-right: 10px; margin-top: 15px; position: absolute; text-align: center; vertical-align: middle; font-weight: bold; text-shadow: none; line-height: 1.3; font-size: 16px; color: ${color} !important; filter: brightness(${(settings.VALUE_OPACITY * 100).toFixed(0)}%) !important">${value}</div><div style="width: 50px; height: 50px; background: #5f5f5f !important; border-radius: 10px; box-shadow: 4px 4px 3px 1px rgba(0,0,0,0.3)${settings.BOX_INDICATOR ? '' : '; display: none'}"></div>`;
-const diffDiv = async (color, hovertext, absolute, value, fromtop=false) => `<div id="${mainDivId}" title="${hovertext}" style="width: 50px; height: 50px; zoom: ${settings.INDICATOR_SIZE}; ${fromtop ? 'top: ' + (await awaitElement('character-header', true).then(e => e.offsetHeight) - settings.INDICATOR_SIZE * 50 - 10) + 'px;' : ''} position: ${absolute ? 'absolute; bottom: 10px; right: 10px' : 'relative'}">${innerDiffDiv(color, value)}</div>`;
-const diffIndicatorValue = diff => diff != -1 ? diffToStr(diff, (settings.SHOW_DECIMALS && diff != 100 ? 1 : 0), false) : '';
+const innerDiffDiv = (color, background, value) => `<div style="width: 24px; height: 24px; border-radius: 12px; margin: 13px; position: absolute; box-shadow: 0 0 6px 6px ${color}; opacity: 0.7${settings.GLOWING_INDICATOR && color !== settings.DIFF_COLORS.null ? '' : '; display: none'}"></div><div style="width: 26px; height: 26px; background: ${background} !important; border-radius: 13px; margin: 12px; position: absolute"></div><div style="width: 30px; height: 18px; margin-left: 10px; margin-right: 10px; margin-top: 15px; position: absolute; text-align: center; vertical-align: middle; font-weight: bold; text-shadow: none; line-height: 1.3; font-size: 16px; color: ${settings.TEXT_COLOR !== '' ? settings.TEXT_COLOR : color} !important; filter: brightness(${settings.TEXT_BRIGHTNESS.toFixed(0)}%) !important;">${value}</div><div style="width: 50px; height: 50px; background: #5f5f5f !important; border-radius: 10px; box-shadow: 4px 4px 3px 1px rgba(0,0,0,0.3)${settings.BOX_INDICATOR ? '' : '; display: none'}"></div>`;
+const diffDiv = async (color, background, hovertext, absolute, value, fromtop=false) => `<div id="${mainDivId}" title="${hovertext}" style="width: 50px; height: 50px; float: right; transform: scale(${settings.INDICATOR_SIZE}); transform-origin: right center; -ms-transform: scale(${settings.INDICATOR_SIZE}); -ms-transform-origin: right center;  -moz-transform: scale(${settings.INDICATOR_SIZE}); -moz-transform-origin: right center;  -o-transform: scale(${settings.INDICATOR_SIZE}); -o-transform-origin: right center; -webkit-transform: scale(${settings.INDICATOR_SIZE}); -webkit-transform-origin: right center; ${fromtop ? 'top: ' + (await awaitElement('character-header', true).then(e => e.offsetHeight) - (settings.INDICATOR_SIZE * 50 - 10).toFixed(0)) + 'px;' : ''} position: relative;}">${innerDiffDiv(color, background, value)}</div>`;
+const diffIndicatorValue = diff => diff !== -1 ? diffToStr(diff, (settings.SHOW_DECIMALS && diff !== 100 ? 1 : 0), false) : '';
 const charToColorDiff = (type, char) => { // get color based on difficulty of char
-    const diff = type == 'kanji' ? getItemDiff(char, kanjiDiff) : (type == 'vocabulary' ? getItemDiff(char, vocabDiff) : -1);
-    const color = diffToColor(diff);
-    return [diff, color];
-}
+    const diff = type === 'kanji' ? getItemDiff(char, kanjiDiff) : (type === 'vocabulary' ? getItemDiff(char, vocabDiff) : -1);
+    const colors = diffToColor(diff);
+    if (colors === settings.DIFF_COLORS.null || !settings.USE_GRADIENT) return [diff, colors.Start, colors.Start];
+    const background = settings.REVERSE_GRADIENT ? `linear-gradient(180deg, ${colors.End} 0%, ${colors.Start} 100%)` : `linear-gradient(180deg, ${colors.Start} 0%, ${colors.End} 100%)`;
+    return [diff, colors.Start, background];
+
+    // const diff = type === 'kanji' ? getItemDiff(char, kanjiDiff) : (type === 'vocabulary' ? getItemDiff(char, vocabDiff) : -1);
+    // const colors = diffToColor(diff);
+    // const color = colors[0];
+    // if (colors === settings.DIFF_COLORS.null) return [diff, color, color];
+    // if (settings.REVERSE_GRADIENT) colors.reverse();
+    // const background = settings.USE_GRADIENT ? `linear-gradient(180deg, ${colors[0]} 0%, ${colors[1]} 100%)` : color;
+    // return [diff, color, background];
+};
 const innerDivByChar = (type, char) => { // get inner indicator div through char
-    const [diff, color] = charToColorDiff(type, char);
-    return [innerDiffDiv(color, diffIndicatorValue(diff)), (diff != -1 ? diffToStr(diff) : 'n/a')];
-}
+    const [diff, color, background] = charToColorDiff(type, char);
+    return [innerDiffDiv(color, background, diffIndicatorValue(diff)), background, (diff !== -1 ? diffToStr(diff) : 'n/a')];
+};
 const divByChar = async (type, char, absolute) => { // get indicator div through char
-    const [diff, color] = charToColorDiff(type, char);
-    return await diffDiv(color, diff != -1 ? diffToStr(diff) : 'n/a', absolute, diffIndicatorValue(diff));
-}
+    const [diff, color, background] = charToColorDiff(type, char);
+    return await diffDiv(color, background, diff !== -1 ? diffToStr(diff) : 'n/a', absolute, diffIndicatorValue(diff));
+};
 const strToElement = str => { // turn HTML string into element
     var temp = document.createElement('div');
     temp.innerHTML = str;
     return temp.firstChild;
-}
+};
 const awaitElement = (id, isClass = false) => new Promise(resolve => { // "await existence of element"-function
     const getFunc = isClass ? t => document.getElementsByClassName(t)[0] : t => document.getElementById(t);
     if (getFunc(id)) return resolve(getFunc(id));
@@ -104,40 +108,48 @@ const awaitElement = (id, isClass = false) => new Promise(resolve => { // "await
 });
 
 // main function
-(async () => {
+document.documentElement.addEventListener('turbo:load', (turboEvent) => setTimeout((async () => {
+    const url = new URL(turboEvent.detail.url);
+    if (!pathsRegex.test(url.pathname)) return;
+    // find out if page is lesson, review, or word info
+    const pageType = url.pathname.includes('review') ? 'review' : (url.pathname.includes('extra_study') ? 'extra_study' : (url.pathname.includes('subject') ? 'lesson' : 'info'));
+    // if word info which type of item
+    const infoType = pageType !== 'info' ? undefined : (url.pathname.includes('radical') ? 'rad' : (url.pathname.includes('kanji') ? 'kan' : 'voc'));
 
     // handle settings if wkof is installed and should be used
+    const wkof = window.wkof; // WaniKani Open Framework
+    const wkItemInfo = window.wkItemInfo; // WaniKani Item Info Injector
     if (wkof && USE_WKOF_SETTINGS) {
         var updateDiffInfo = () => {};
         const loadSettings = async () => {
             await wkof.Settings.save(wkofScriptId);
             const newSettings = await wkof.Settings.load(wkofScriptId);
-            if (newSettings) for (const key in defaultSettings) if (!newSettings.hasOwnProperty(key)) newSettings[key] = defaultSettings[key];
+            if (newSettings) for (const key in defaultSettings) if (!(key in newSettings)) newSettings[key] = defaultSettings[key];
             settings = newSettings || settings;
             updateDiffInfo();
             return newSettings;
-        }
+        };
 
         const settingsHandler = async () => {
             if (!(await loadSettings())) { // if no settings exist, save new ones from file
                 wkof.settings[wkofScriptId] = {...settings};
                 loadSettings();
             }
-            if (pageType == 'info') return;
+            if (pageType === 'info') return;
 
             var dialog, prevSettings;
             const resetBtnClick = (btnName, btnConfig, onChange) => { // restore default with reset btn
                 var settingNames;
                 switch(btnName) { // get settings by button name
-                    case 'reset_color_button': settingNames = ['DIFF_COLORS']; break;
-                    case 'reset_size_button': settingNames = ['INDICATOR_SIZE', 'VALUE_OPACITY']; break;
+                    case 'reset_color_button': settingNames = ['DIFF_COLORS', 'USE_GRADIENT', 'REVERSE_GRADIENT']; break;
+                    case 'reset_size_button': settingNames = ['INDICATOR_SIZE', 'TEXT_BRIGHTNESS']; break;
                     case 'reset_appearance_button': settingNames = ['GLOWING_INDICATOR', 'BOX_INDICATOR', 'SHOW_DECIMALS']; break;
                     case 'reset_visibility_button': settingNames = ['SHOW_ON_INFO_PAGE', 'INDICATOR_REVIEW_POS', 'HIDE_UNTIL_ANSWER']; break;
                 }
                 if (settingNames) for (const settingName of settingNames) wkof.settings[wkofScriptId][settingName] = defaultSettings[settingName];
                 dialog.refresh(); // make changes visible
                 onChange(); // report to wkof
-            }
+            };
             const disableCheckbox = (elementName, switchBool) => {
                 const checkboxElement = document.querySelectorAll(`input[name="${elementName}"]`)[0];
                 if (switchBool) {
@@ -146,7 +158,7 @@ const awaitElement = (id, isClass = false) => new Promise(resolve => { // "await
                 } else checkboxElement.disabled = false;
                 loadSettings();
                 dialog.refresh();
-            }
+            };
             dialog = new wkof.Settings({ // define dialog
                 script_id: wkofScriptId,
                 title: wkofScriptTitle,
@@ -157,7 +169,7 @@ const awaitElement = (id, isClass = false) => new Promise(resolve => { // "await
                     loadSettings();
                 },
                 pre_open: () => {
-                    disableCheckbox('HIDE_UNTIL_ANSWER', settings.INDICATOR_REVIEW_POS != 'main'); // disable if necessary
+                    disableCheckbox('HIDE_UNTIL_ANSWER', settings.INDICATOR_REVIEW_POS !== 'main'); // disable if necessary
                 },
                 content: {
                     visibility_settings: { // visibility settings
@@ -175,7 +187,7 @@ const awaitElement = (id, isClass = false) => new Promise(resolve => { // "await
                                     none: 'Nowhere',
                                 },
                                 on_change: () => {
-                                    disableCheckbox('HIDE_UNTIL_ANSWER', settings.INDICATOR_REVIEW_POS != 'main');
+                                    disableCheckbox('HIDE_UNTIL_ANSWER', settings.INDICATOR_REVIEW_POS !== 'main');
                                 },
                             },
                             HIDE_UNTIL_ANSWER: {
@@ -183,7 +195,7 @@ const awaitElement = (id, isClass = false) => new Promise(resolve => { // "await
                                 label: 'Hide Difficulty until Answered',
                                 default: defaultSettings.HIDE_UNTIL_ANSWER,
                                 hover_tip: 'hide the difficulty rating until an answer is given for the item (only changeable if indicator position is beside character)',
-                                validate: (value, config) => wkof.settings[wkofScriptId].INDICATOR_REVIEW_POS == 'main' ? true : 'Can only be changed when indicator is beside the character (you should not be able to see this).',
+                                validate: (value, config) => wkof.settings[wkofScriptId].INDICATOR_REVIEW_POS === 'main' ? true : 'Can only be changed when indicator is beside the character (you should not be able to see this).',
                             },
                             SHOW_ON_INFO_PAGE: {
                                 type: 'checkbox',
@@ -241,15 +253,7 @@ const awaitElement = (id, isClass = false) => new Promise(resolve => { // "await
                                 default: defaultSettings.INDICATOR_SIZE,
                                 hover_tip: 'percentage for size of difficulty indicator; default (1) corresponds to 50 pixels',
                                 min: 0,
-                                max: 3,
-                            },
-                            VALUE_OPACITY: {
-                                type: 'number',
-                                label: 'Value Opacity Percentage',
-                                default: defaultSettings.VALUE_OPACITY,
-                                hover_tip: 'opacity of the value inside the difficulty indicator (1 is not visible, 0 is black)',
-                                min: 0,
-                                max: 1,
+                                max: 100,
                             },
                             reset_size_button:{
                                 type: 'button',
@@ -263,12 +267,38 @@ const awaitElement = (id, isClass = false) => new Promise(resolve => { // "await
                     DIFF_COLORS: { // color settings
                         type: 'group',
                         label: 'Color Settings',
-                        content: {...Object.fromEntries(Object.keys(defaultSettings.DIFF_COLORS).map(key => [key, {
+                        content: {
+                            TEXT_COLOR: {
+                                type: 'text',
+                                label: 'Text Color',
+                                default: defaultSettings.TEXT_COLOR,
+                                hover_tip: 'color to use instead of the automatic text color for the number (if desired)',
+                            },
+                            TEXT_BRIGHTNESS: {
+                                type: 'number',
+                                label: 'Text Brightness %',
+                                default: defaultSettings.TEXT_BRIGHTNESS,
+                                hover_tip: 'brightness of the value inside the difficulty indicator (0 is black, 100 has no effect, >100 brightens it)',
+                                min: 0,
+                            },
+                            ...Object.fromEntries(Object.entries(defaultSettings.DIFF_COLORS).flatMap(([key, value]) => Object.keys(value).map(num => [`${key}_${num}`, {
                                 type: 'color',
-                                label: key == 'null' ? 'No Data' : `Difficulty over ${(key/10).toFixed(1)}`,
-                                default: defaultSettings.DIFF_COLORS[key],
-                                path: `@DIFF_COLORS['${key}']`,
-                            }])),
+                                label: key === 'null' ? 'No Data' : `Difficulty over ${(key/10).toFixed(1)} (Gradient ${num})`,
+                                default: defaultSettings.DIFF_COLORS[key][num],
+                                path: `@DIFF_COLORS['${key}']['${num}']`,
+                            }]))),
+                            USE_GRADIENT: {
+                                type: "checkbox",
+                                label: 'Use Gradient',
+                                default: defaultSettings.USE_GRADIENT,
+                                hover_tip: 'use the gradient or use only a solid color',
+                            },
+                            REVERSE_GRADIENT: {
+                                type: "checkbox",
+                                label: 'Invert Gradient Colors',
+                                default: defaultSettings.REVERSE_GRADIENT,
+                                hover_tip: 'swap the colors of the gradient',
+                            },
                             reset_color_button: {
                                 type: 'button',
                                 label: '',
@@ -277,7 +307,7 @@ const awaitElement = (id, isClass = false) => new Promise(resolve => { // "await
                                 on_click: resetBtnClick,
                             },
                         },
-                    }
+                    },
                 }
             });
             wkof.Menu.insert_script_link({ // add setting
@@ -300,86 +330,87 @@ const awaitElement = (id, isClass = false) => new Promise(resolve => { // "await
     const appendToInfoPage = async () => wkItemInfo.appendAtTop(itemInfoTitle, await charToElement);
 
     // initialize difficulty indicator
-    if (pageType == 'info') { // kanji/vocab/radical info page
+    if (pageType === 'info') { // kanji/vocab/radical info page
         if (settings.SHOW_ON_INFO_PAGE) appendToInfoPage();
     } else { // extra study, lesson, or review page
 
         var itemInfoSection;
-        if (settings.INDICATOR_REVIEW_POS == 'info' && pageType != 'lesson') itemInfoSection = await appendToInfo();
+        if (settings.INDICATOR_REVIEW_POS === 'info' && pageType !== 'lesson') itemInfoSection = await appendToInfo();
 
         // change level up div width so that hover text is visible
-        if (OFFSET_SRS_POPUP && settings.INDICATOR_REVIEW_POS == 'main' && pageType == 'review') {
+        if (OFFSET_SRS_POPUP && settings.INDICATOR_REVIEW_POS === 'main' && pageType === 'review') {
             const cssScript = document.createElement('style');
             cssScript.innerHTML = '.srs {width: 50%; margin-left: 25%;}';
             document.head.appendChild(cssScript);
         }
 
         // initialize elements
-        let characterElement = await awaitElement('character-header', true);
-        const answerElement = pageType != 'lesson' ? await awaitElement('quiz-input__input-container', true) : '';
+        let answerElement;
+        let characterElement;
         let mainDiv;
-        const initializeIndicator = pageType != 'lesson' ? async () => {
-            if (mainDiv) mainDiv.remove();
+        const initializeIndicator = pageType !== 'lesson' ? async () => {
+            if ((mainDiv = document.getElementById(mainDivId))) mainDiv.remove();
+            answerElement = await awaitElement('quiz-input__input-container', true);
+            characterElement = await awaitElement('character-header', true);
             characterElement.appendChild(strToElement(await diffDiv('gray', 'Inactive', true, '', false)));
             mainDiv = document.getElementById(mainDivId);
         } : async () => {
-            if (mainDiv) mainDiv.remove();
+            if ((mainDiv = document.getElementById(mainDivId))) mainDiv.remove();
             characterElement = await awaitElement('character-header', true);
             document.body.appendChild(strToElement(await diffDiv('gray', 'Inactive', true, '', true)));
             mainDiv = document.getElementById(mainDivId);
-        }
-        if (isFirefox && pageType != 'lesson') initializeIndicator();
-
-        let prevPos = settings.INDICATOR_REVIEW_POS;
+        };
 
         // update diff sign
         updateDiffInfo = async function () {
-            if (pageType != 'lesson') {
-                if (settings.INDICATOR_REVIEW_POS == 'none') {
-                    prevPos = settings.INDICATOR_REVIEW_POS;
-                    if (itemInfoSection) itemInfoSection.remove();
-                    itemInfoSection = undefined;
-                    mainDiv = document.getElementById(mainDivId);
-                    if (mainDiv) mainDiv.remove();
-                    mainDiv = undefined;
-                    return;
-                }
-                if (prevPos != settings.INDICATOR_REVIEW_POS) {
-                    prevPos = settings.INDICATOR_REVIEW_POS;
-                    if (settings.INDICATOR_REVIEW_POS == 'info') {
-                        if (mainDiv) mainDiv.remove();
-                        mainDiv = undefined;
+            // if (prevPos === settings.INDICATOR_REVIEW_POS) return;
+            prevPos = settings.INDICATOR_REVIEW_POS;
+            if (pageType !== 'lesson') {
+                switch (settings.INDICATOR_REVIEW_POS) {
+                    case 'none':
+                        if ((itemInfoSection = document.getElementById(itemInfoTitle))) { itemInfoSection.remove(); itemInfoSection = undefined; }
+                        if ((mainDiv = document.getElementById(mainDivId))) { mainDiv.remove(); mainDiv = undefined; }
+                        return;
+                    case 'info':
+                        if ((mainDiv = document.getElementById(mainDivId))) { mainDiv.remove(); mainDiv = undefined; }
                         itemInfoSection = appendToInfo();
-                    } else if (settings.INDICATOR_REVIEW_POS == 'main') {
-                        if (itemInfoSection) itemInfoSection.remove();
-                        itemInfoSection = undefined;
-                        initializeIndicator();
-                    }
+                        break;
+                    case 'main':
+                        if ((itemInfoSection = document.getElementById(itemInfoTitle))) { itemInfoSection.remove(); itemInfoSection = undefined; }
+                        if (!(mainDiv = document.getElementById(mainDivId))) initializeIndicator();
+                        mainDiv = await awaitElement(mainDivId);
+                        break;
                 }
-                if (settings.INDICATOR_REVIEW_POS == 'info') mainDiv = await awaitElement(mainDivId);
-                else if (!document.getElementById(mainDivId)) initializeIndicator();
             } else await initializeIndicator();
 
             // get item info and new indicator
-            const itemType = characterElement.className.split('--')[1].toLowerCase();
-            const itemName = characterElement.getElementsByClassName('character-header__characters')[0].innerHTML;
-            const [innerDivHTML, hovertext] = pageType != 'lesson' && settings.HIDE_UNTIL_ANSWER && !answerElement.hasAttribute('correct') && settings.INDICATOR_REVIEW_POS == 'main' ? innerDivByChar('', '') : innerDivByChar(itemType, itemName);
+            const [innerDivHTML, , hovertext] = ((pageType !== 'lesson' &&
+                                               settings.HIDE_UNTIL_ANSWER &&
+                                               !answerElement?.hasAttribute('correct') &&
+                                                settings.INDICATOR_REVIEW_POS === 'main')
+                                               ? innerDivByChar('', '')
+                                               : innerDivByChar(characterElement.className.split('--')[1].toLowerCase(),
+                                                                characterElement.getElementsByClassName('character-header__characters')[0].innerHTML));
 
             // renew attributes
             if (mainDiv) {
                 mainDiv.innerHTML = innerDivHTML;
                 mainDiv.title = hovertext;
-                mainDiv.style.zoom = settings.INDICATOR_SIZE;
+                mainDiv.style['transform'] = 'scale('+settings.INDICATOR_SIZE+')';
+                mainDiv.style['-ms-transform'] = 'scale('+settings.INDICATOR_SIZE+')';
+                mainDiv.style['-moz-transform'] = 'scale('+settings.INDICATOR_SIZE+')';
+                mainDiv.style['-o-transform'] = 'scale('+settings.INDICATOR_SIZE+')';
+                mainDiv.style['-webkit-transform'] = 'scale('+settings.INDICATOR_SIZE+')';
             }
         };
 
         // set diff box contents for first item
-        updateDiffInfo();
+        await updateDiffInfo();
 
         // setup observer to change info box contents for subsequent items
         const observer = new MutationObserver(() => updateDiffInfo());
-        const config = { ...(pageType != 'lesson' ? { childList: true, characterData: true, subtree: true, attributeFilter: ['class', 'correct'] } : { attributes: true }) };
-        observer.observe(pageType != 'lesson' ? answerElement : document.children[0], config);
+        const config = { ...(pageType !== 'lesson' ? { childList: true, characterData: true, subtree: true, attributeFilter: ['class', 'correct'] } : { attributes: true }) };
+        observer.observe(pageType !== 'lesson' ? answerElement : document.children[0], config);
     }
 
-})();
+}),0));
