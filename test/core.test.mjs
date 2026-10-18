@@ -5,6 +5,8 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const core = require('../main.js');
 
+const close = (a, b, eps = 1e-3) => assert.ok(Math.abs(a - b) < eps, `${a} ≉ ${b}`);
+
 test('bandIndex: easiest half, next 25%, next 15%, hardest 10%', () => {
   assert.equal(core.bandIndex(0), 0);
   assert.equal(core.bandIndex(49.9), 0);
@@ -15,80 +17,113 @@ test('bandIndex: easiest half, next 25%, next 15%, hardest 10%', () => {
   assert.equal(core.bandIndex(100), 3);
 });
 
-test('midRanks gives ties the average rank', () => {
-  assert.deepEqual(core.midRanks([5, 0, 0, 9]), [2, 0.5, 0.5, 3]);
+test('gamma functions match closed forms', () => {
+  close(core.logGamma(5), Math.log(24), 1e-9);
+  close(core.logGamma(0.5), Math.log(Math.sqrt(Math.PI)), 1e-9);
+  // Gamma(1, rate) is exponential: P(x) = 1 - e^(-x), quantile = -ln(1 - p) / rate
+  close(core.gammaP(1, 2), 1 - Math.exp(-2), 1e-9);
+  close(core.gammaQuantile(0.05, 1, 1), -Math.log(0.95));
+  close(core.gammaQuantile(0.95, 1, 4), -Math.log(0.05) / 4);
+  // Gamma(2, 1): P(x) = 1 - (1 + x) e^(-x)
+  close(core.gammaP(2, 3), 1 - 4 * Math.exp(-3), 1e-9);
+  // large shapes stay accurate (normal approximation: mean 1000, sd ~31.6)
+  close(core.gammaQuantile(0.5, 1000, 1), 999.67, 0.05);
 });
 
-test('decodeCohort reads id deltas, votes and the optional reading share (base 36)', () => {
-  // ids 440, 441, 450; votes 36, 0, 5; reading share 50 only on the first
-  assert.deepEqual(core.decodeCohort('c8.10.1e,1.0,9.5'), [
-    { id: 440, votes: 36, readingShare: 50 },
-    { id: 441, votes: 0, readingShare: null },
-    { id: 450, votes: 5, readingShare: null },
+test('decodeLevel reads id deltas, votes, reading share and the 2022 level (base 36)', () => {
+  // ids 440, 441, 450; votes 36, 0, 5; reading share 50 on the first; the last was level 2 in 2022
+  assert.deepEqual(core.decodeLevel('c8.10.1e,1.0,9.5~2'), [
+    { id: 440, votes: 36, readingShare: 50, level2022: null },
+    { id: 441, votes: 0, readingShare: null, level2022: null },
+    { id: 450, votes: 5, readingShare: null, level2022: 2 },
   ]);
-  assert.deepEqual(core.decodeCohort(''), []);
+  assert.deepEqual(core.decodeLevel(''), []);
 });
 
+// Two levels of kanji. Level 1: ids 1-10 with lots of evidence (exposure 100), votes 10..100.
+// Level 2: ids 11-20 with little evidence (exposure 2); id 20 moved there from level 1.
 const tiny = {
   snapshot: '2022-09-24',
   learners: Array.from({ length: 60 }, (_, i) => 1000 - i * 10),
-  reliability: { kanji: Array(60).fill(90), vocabulary: Array(60).fill(60) },
-  // level 3 kanji: ten items, ids 1..10, votes 0..9
-  kanji: { 3: Array.from({ length: 10 }, (_, i) => `1.${i.toString(36)}`).join(',') },
-  vocabulary: { 3: 'g.0,1.0' }, // ids 16 and 17, both zero votes
+  exposure: { kanji: [100, 2, ...Array(58).fill(1)], vocabulary: Array(60).fill(1) },
+  kanji: {
+    1: Array.from({ length: 10 }, (_, i) => `1.${((i + 1) * 10).toString(36)}`).join(','),
+    2: [...Array.from({ length: 9 }, (_, i) => `${i === 0 ? 'b' : '1'}.${i.toString(36)}`), '1.a~1'].join(','),
+  },
+  vocabulary: {},
 };
 
-test('buildCommunityIndex ranks items inside their 2022 level and type', () => {
+test('buildCommunityIndex: w is the posterior mean, exposure follows the 2022 level', () => {
   const index = core.buildCommunityIndex(tiny);
-  assert.equal(index.size, 12);
-  const hardest = index.get(10);
-  assert.equal(hardest.band, 3);
-  assert.equal(hardest.harderThan, 90);
-  assert.equal(hardest.level2022, 3);
-  assert.equal(hardest.learners, 980);
-  assert.equal(hardest.confidence, 'high');
-  assert.equal(index.get(1).band, 0);
-  assert.equal(index.get(1).harderThan, 0);
-  // bands follow the 50/25/15/10 split
-  const bands = [...Array(10)].map((_, i) => index.get(i + 1).band);
-  assert.deepEqual(bands, [0, 0, 0, 0, 0, 1, 1, 2, 2, 3]);
-  // all-zero ties sit in the middle, so they are not called hard
-  assert.equal(index.get(16).band, 1);
-  assert.equal(index.get(16).confidence, 'low');
+  assert.equal(index.size, 20);
+  const top = index.get(10);
+  assert.equal(top.votes, 100);
+  close(top.w, 101 / 101);
+  assert.equal(top.learners, 1000);
+  const moved = index.get(20);
+  assert.equal(moved.level, 2);
+  assert.equal(moved.level2022, 1);
+  close(moved.w, 11 / 101, 1e-9); // level 1 exposure, not level 2's
+  close(index.get(11).w, 1 / 3); // 0 votes, exposure 2
 });
 
-test('confidenceOf thresholds', () => {
-  assert.equal(core.confidenceOf(0.9), 'high');
-  assert.equal(core.confidenceOf(0.7), 'medium');
-  assert.equal(core.confidenceOf(0.69), 'low');
+test('createRanker: pools everything up to the pool level and widens with little evidence', () => {
+  const index = core.buildCommunityIndex(tiny);
+  const rank = core.createRanker(index);
+  const top = rank(10, 1);
+  assert.equal(top.poolLevel, 1);
+  assert.equal(top.band, 3);
+  assert.equal(top.harderThan, 95);
+  // well-measured items get a narrow range
+  assert.ok(top.bandHi - top.bandLo <= 1);
+  // the pool is never below the item's own level
+  assert.equal(rank(15, 1).poolLevel, 2);
+  // pool level 2 adds level 2's items to the comparison
+  assert.notEqual(rank(5, 2).percentile, rank(5, 1).percentile);
+  // a weakly measured item (exposure 2) has a wide range: not enough data
+  const weak = rank(13, 2);
+  assert.equal(weak.band, null);
+  assert.ok(weak.bandHi - weak.bandLo >= 2);
+  assert.equal(rank(999, 2), null);
 });
 
-test('personalDifficulty: null without enough answers', () => {
-  assert.equal(core.personalDifficulty(null), null);
-  assert.equal(core.personalDifficulty({ meaning_correct: 1, meaning_incorrect: 0, reading_correct: 1, reading_incorrect: 0 }), null);
-});
-
-test('personalDifficulty: accuracy bands, weak side and leech', () => {
-  const easy = core.personalDifficulty({
-    meaning_correct: 20, meaning_incorrect: 0, meaning_current_streak: 10,
-    reading_correct: 19, reading_incorrect: 1, reading_current_streak: 8,
+test('personalStats: null without enough answers; weak side and leech', () => {
+  assert.equal(core.personalStats(null), null);
+  assert.equal(core.personalStats({ meaning_correct: 1, meaning_incorrect: 0, reading_correct: 1, reading_incorrect: 0 }), null);
+  // 知識-like: 84% overall, meaning 13/18, reading 13/13, last meaning answer wrong (streak 1)
+  const p = core.personalStats({
+    meaning_correct: 13, meaning_incorrect: 5, meaning_current_streak: 1,
+    reading_correct: 13, reading_incorrect: 0, reading_current_streak: 13,
   });
-  assert.equal(easy.band, 0);
-  assert.equal(easy.accuracy, 98);
-  assert.equal(easy.weakSide, null);
-
-  const leech = core.personalDifficulty({
-    meaning_correct: 12, meaning_incorrect: 1, meaning_current_streak: 6,
-    reading_correct: 9, reading_incorrect: 6, reading_current_streak: 1,
-  });
-  assert.equal(leech.band, 3, 'six wrong readings and a streak of 1 is a leech');
-  assert.equal(leech.weakSide, 'reading');
-  assert.equal(leech.meaning, 92);
-  assert.equal(leech.reading, 60);
-
-  const radical = core.personalDifficulty({ meaning_correct: 7, meaning_incorrect: 2, meaning_current_streak: 3, reading_correct: 0, reading_incorrect: 0, reading_current_streak: 0 });
+  assert.equal(p.accuracy, 84);
+  assert.equal(p.meaning, 72);
+  assert.equal(p.reading, 100);
+  assert.equal(p.weakSide, 'meaning');
+  assert.equal(p.leech, true, 'a separate tag, not a band');
+  const radical = core.personalStats({ meaning_correct: 7, meaning_incorrect: 2, meaning_current_streak: 3, reading_correct: 0, reading_incorrect: 0 });
   assert.equal(radical.reading, null);
-  assert.equal(radical.band, 2); // 78% correct
+  assert.equal(radical.leech, false);
+});
+
+test('buildPersonalIndex ranks against your own items of the same type', () => {
+  const stats = (correct, incorrect) => ({ meaning_correct: correct, meaning_incorrect: incorrect, meaning_current_streak: 5, reading_correct: correct, reading_incorrect: incorrect, reading_current_streak: 5 });
+  // ten vocab: 0..9 wrong answers out of 20 per side; one radical that is always right
+  const items = Array.from({ length: 10 }, (_, i) => ({ id: i + 1, type: 'vocabulary', stats: stats(20 - i, i) }));
+  items.push({ id: 100, type: 'radical', stats: { meaning_correct: 10, meaning_incorrect: 0, meaning_current_streak: 10 } });
+  items.push({ id: 101, type: 'vocabulary', stats: stats(1, 0) }); // too few answers: skipped
+  const index = core.buildPersonalIndex(items);
+  assert.equal(index.size, 11);
+  assert.equal(index.has(101), false);
+  assert.deepEqual([...Array(10)].map((_, i) => index.get(i + 1).band), [0, 0, 0, 0, 0, 1, 1, 2, 2, 3]);
+  assert.equal(index.get(10).of, 10);
+  assert.equal(index.get(100).of, 1, 'radicals are ranked among radicals');
+  // pseudo-answers keep tiny samples from outranking long histories
+  const few = core.buildPersonalIndex([
+    { id: 1, type: 'kanji', stats: { meaning_correct: 2, meaning_incorrect: 1, meaning_current_streak: 1, reading_correct: 1, reading_incorrect: 0, reading_current_streak: 1 } },
+    { id: 2, type: 'kanji', stats: stats(65, 35) },
+    { id: 3, type: 'kanji', stats: stats(95, 5) },
+  ]);
+  assert.ok(few.get(2).percentile > few.get(1).percentile);
 });
 
 test('quizRevealed follows the setting', () => {
@@ -133,15 +168,18 @@ test('migrateLegacySettings keeps the review choice of v0.23', () => {
   assert.deepEqual(core.migrateLegacySettings({ INDICATOR_REVIEW_POS: 'info', HIDE_UNTIL_ANSWER: true }), {});
 });
 
-test('describeCommunity words zero votes, votes, the split and level moves', () => {
+test('describeCommunity words the position, range, votes, split and level moves', () => {
   const index = core.buildCommunityIndex(tiny);
-  const zero = core.describeCommunity(index.get(1), 3);
-  assert.match(zero.position, /^None of the 980 learners who had reached level 3 had it as their worst kanji\.$/);
-  assert.equal(zero.votes, null);
-  assert.equal(zero.moved, null);
-  const top = core.describeCommunity({ ...index.get(10), readingShare: 70 }, 10);
-  assert.equal(top.position, 'Harder than 90% of level 3 kanji.');
-  assert.equal(top.votes, 'The worst kanji of 9 of the 980 learners who had reached level 3.');
+  const rank = core.createRanker(index);
+  const top = core.describeCommunity({ ...index.get(10), readingShare: 70 }, rank(10, 1));
+  assert.equal(top.position, 'Harder than 95% of the kanji in levels 1–1.');
+  assert.equal(top.votes, '100 of the 1,000 learners who had reached level 1 named it their worst kanji.');
   assert.deepEqual(top.split, { meaning: 30, reading: 70 });
-  assert.equal(top.moved, 'It was a level 3 item in 2022; it is level 10 now.');
+  assert.equal(top.moved, null);
+  const weak = core.describeCommunity(index.get(13), rank(13, 2));
+  assert.equal(weak.position, 'Not enough data to say how it compares with the kanji in levels 1–2.');
+  assert.match(weak.range, /^Likely range: \w+ to [\w ]+\.$/);
+  assert.equal(weak.votes, '2 of the 990 learners who had reached level 2 named it their worst kanji.');
+  assert.equal(core.describeCommunity(index.get(11), rank(11, 2)).votes, 'None of the 990 learners who had reached level 2 named it their worst kanji.');
+  assert.equal(core.describeCommunity(index.get(20), rank(20, 2)).moved, 'It was a level 1 item in 2022; it is level 2 now.');
 });

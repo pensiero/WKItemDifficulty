@@ -23,9 +23,10 @@ Hover over or click the badge to see where the item sits in its level, how many 
 
 It uses the same 2022 data (88,968 learners' worst kanji and vocab), but turns it into a difficulty differently:
 
-- Items are ranked **within their level**, in four bands: the easiest 50% are *Easy*, then 25% *Medium*, 15% *Hard* and the hardest 10% *Very hard*. Before, one outlier per level squeezed most items into green.
-- Every level shows a **confidence**: how well two random halves of the learners agree. It is high for early levels and lower for late ones, where fewer learners had arrived.
-- **Your difficulty** comes from your own reviews (needs the Open Framework).
+- **Compared with everything up to your level**, not just the item's own level. A model corrects for the fact that people mostly name something they learned recently as their worst item: about 12 times more often than an item from 10+ levels back.
+- Four bands: the easiest 50% are *Easy*, then 25% *Medium*, 15% *Hard* and the hardest 10% *Very hard*.
+- **Honest about thin data.** Every item has a likely range. When the range covers most of the scale, it says *Not enough data* instead of pretending an item with no votes is easy.
+- **Your difficulty**, ranked against the other items you've reviewed, plus a leech tag (needs the Open Framework).
 - Colorblind-safe and monochrome palettes. The bars are readable without color.
 
 Details: [How difficulty is calculated](https://github.com/saraqael-m/WKItemDifficulty#how-difficulty-is-calculated)

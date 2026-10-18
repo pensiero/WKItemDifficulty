@@ -7,6 +7,15 @@
 // often the user had answered its meaning and reading correctly. An item's
 // "votes" are the number of users for whom it was the worst one.
 //
+// Votes can't be compared across levels as they are: early items are seen by far
+// more users, and people overwhelmingly name something they learned recently.
+// fitModel() therefore fits a choice model over all users at once: a user at level L
+// picks their worst item among everything up to L with probability proportional to
+// w_item × recency(L − item level). w is a difficulty that is comparable across
+// levels. What ships is each item's votes plus the "exposure" of its 2022 level
+// (the votes an item with w = 1 would get), from which the userscript derives w and
+// its uncertainty (posterior Gamma(votes + 1, exposure + 1)).
+//
 // Inputs (data/raw/ is git-ignored and filled on demand):
 //   data/raw/rawuserdata.csv   the sheet's "rawuserdata" tab (downloaded from the read-only backup)
 //   data/raw/subjects.json     current WK subjects [{id, object, level, characters}]
@@ -17,6 +26,7 @@
 //   node tools/build-data.mjs            write the data block into main.js
 //   node tools/build-data.mjs --report   also write docs/data-report.md
 import { readFile, writeFile, mkdir, access } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 
 const ROOT = new URL('../', import.meta.url);
 const RAW = new URL('data/raw/', ROOT);
@@ -24,6 +34,8 @@ const SHEET_CSV =
   'https://docs.google.com/spreadsheets/d/1uq8f1N4rfsQS26N1RRKusnwWOfJZhfwsSHs1VI9aElo/export?format=csv&gid=1637531450';
 const SNAPSHOT = '2022-09-24';
 const READ_SHARE_MIN_VOTES = 5; // below this the reading/meaning split is mostly noise
+const RECENCY_LEVELS = 10; // items learned this many levels ago or more count as old
+const PRIOR = 1; // Gamma(1, 1) prior on w: one pseudo-vote toward an average item
 const BEGIN = '// <difficulty-data>';
 const END = '// </difficulty-data>';
 
@@ -104,7 +116,8 @@ async function loadSubjects() {
 }
 
 // Joins the 2022 items with today's subjects and the users' votes.
-// Returns one row per item that still exists on WK.
+// Returns one row per item that still exists on WK. A vote only counts when the
+// voter had reached the item's 2022 level (others had reset or moved levels).
 export function buildItems(users, subjects, items2022) {
   const current = new Map(subjects.map((s) => [`${s.object}:${normalizeCharacters(s.characters || '')}`, s]));
   const tally = new Map();
@@ -112,8 +125,7 @@ export function buildItems(users, subjects, items2022) {
     for (const type of ['kanji', 'vocabulary']) {
       const w = u[type];
       const key = `${type}:${w.characters}`;
-      const t = tally.get(key) || { votes: 0, meaningWrong: 0, readingWrong: 0, voterLevels: [] };
-      t.votes++;
+      const t = tally.get(key) || { meaningWrong: 0, readingWrong: 0, voterLevels: [] };
       t.meaningWrong += Math.max(0, w.meaningWrong);
       t.readingWrong += Math.max(0, w.readingWrong);
       t.voterLevels.push(u.level);
@@ -137,19 +149,22 @@ export function buildItems(users, subjects, items2022) {
       continue;
     }
     seen.add(key);
-    const t = tally.get(key) || { votes: 0, meaningWrong: 0, readingWrong: 0 };
+    const level2022 = item.level ?? subject.level; // zero-vote items had no recorded 2022 level
+    const t = tally.get(key) || { meaningWrong: 0, readingWrong: 0, voterLevels: [] };
+    const votes = t.voterLevels.filter((l) => l >= level2022).length;
     const misses = t.meaningWrong + t.readingWrong;
     rows.push({
       id: subject.id,
       type: item.type,
       characters: subject.characters,
-      level2022: item.level ?? subject.level, // zero-vote items had no recorded 2022 level
+      key,
+      level2022,
       level: subject.level,
-      votes: t.votes,
-      readingShare: t.votes >= READ_SHARE_MIN_VOTES && misses > 0 ? Math.round((t.readingWrong / misses) * 100) : null,
+      votes,
+      readingShare: votes >= READ_SHARE_MIN_VOTES && misses > 0 ? Math.round((t.readingWrong / misses) * 100) : null,
     });
   }
-  const unmatchedVotes = [...tally].filter(([key]) => !seen.has(key)).reduce((n, [, t]) => n + t.votes, 0);
+  const unmatchedVotes = [...tally].filter(([key]) => !seen.has(key)).reduce((n, [, t]) => n + t.voterLevels.length, 0);
   return { rows, gone, unmatchedVotes };
 }
 
@@ -160,6 +175,50 @@ export function learnersPerLevel(users) {
   const reached = new Array(61).fill(0);
   for (let l = 60, sum = 0; l >= 1; l--) reached[l] = sum += atLevel[l];
   return reached;
+}
+
+// The choice model (see the header), fitted by minorization-maximization.
+// Returns w per row (same order as `rows`), exposure per 2022 level (1..60) and the
+// recency weights (relative to items learned RECENCY_LEVELS or more levels ago).
+export function fitModel(rows, users, type, iterations = 300) {
+  const items = rows.filter((r) => r.type === type);
+  const index = new Map(items.map((r, i) => [r.key, i]));
+  const lvl = items.map((r) => r.level2022);
+  const votes = new Float64Array(items.length);
+  const usersAt = new Float64Array(61); // users per level whose vote is usable
+  const gapVotes = new Float64Array(RECENCY_LEVELS + 1);
+  for (const u of users) {
+    const i = index.get(`${type}:${u[type].characters}`);
+    if (i == null || lvl[i] > u.level) continue;
+    votes[i]++;
+    usersAt[u.level]++;
+    gapVotes[Math.min(u.level - lvl[i], RECENCY_LEVELS)]++;
+  }
+  const gap = (L, l) => Math.min(L - l, RECENCY_LEVELS);
+  const w = new Float64Array(items.length).fill(1);
+  const recency = new Float64Array(RECENCY_LEVELS + 1).fill(1);
+  const normalizers = () => {
+    const Z = new Float64Array(61);
+    for (let i = 0; i < items.length; i++) for (let L = lvl[i]; L <= 60; L++) Z[L] += w[i] * recency[gap(L, lvl[i])];
+    return Z;
+  };
+  const exposureAt = (Z) => {
+    const E = new Float64Array(61);
+    for (let l = 1; l <= 60; l++) for (let L = l; L <= 60; L++) if (usersAt[L]) E[l] += (usersAt[L] * recency[gap(L, l)]) / Z[L];
+    return E;
+  };
+  for (let it = 0; it < iterations; it++) {
+    const E = exposureAt(normalizers());
+    for (let i = 0; i < items.length; i++) w[i] = (votes[i] + PRIOR) / (E[lvl[i]] + PRIOR);
+    const Z = normalizers();
+    const G = new Float64Array(RECENCY_LEVELS + 1);
+    for (let i = 0; i < items.length; i++) for (let L = lvl[i]; L <= 60; L++) if (usersAt[L]) G[gap(L, lvl[i])] += (usersAt[L] * w[i]) / Z[L];
+    for (let k = 0; k <= RECENCY_LEVELS; k++) if (G[k]) recency[k] = gapVotes[k] / G[k];
+    const base = recency[RECENCY_LEVELS];
+    for (let k = 0; k <= RECENCY_LEVELS; k++) recency[k] /= base;
+  }
+  const exposure = exposureAt(normalizers());
+  return { items, w, exposure, recency };
 }
 
 // Mid-ranks (ties share the average rank), 0-based.
@@ -188,59 +247,52 @@ function pearson(a, b) {
   return da && db ? num / Math.sqrt(da * db) : 0;
 }
 
-// Split-half reliability of the within-level ranking: split users in two random
-// halves, rank each level's items by votes in each half, correlate the ranks,
-// and step the correlation up to the full sample (Spearman-Brown).
-function reliability(users, rows, splits = 20) {
+// Split-half reliability of the model's ranking: fit on two random halves of the
+// users, correlate the rankings (Spearman), step up to the full sample (Spearman-Brown).
+// Returned per type for all items and per block of 10 levels.
+function reliability(users, rows) {
   let seed = 42;
   const rand = () => ((seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31);
-  const cohorts = groupCohorts(rows);
-  const sums = new Map();
-  for (let s = 0; s < splits; s++) {
-    const halves = [new Map(), new Map()];
-    for (const u of users) {
-      const h = halves[rand() < 0.5 ? 0 : 1];
-      for (const type of ['kanji', 'vocabulary']) {
-        const key = `${type}:${u[type].characters}`;
-        h.set(key, (h.get(key) || 0) + 1);
-      }
+  const halves = [[], []];
+  for (const u of users) halves[rand() < 0.5 ? 0 : 1].push(u);
+  const stepUp = (r) => (r > 0 ? (2 * r) / (1 + r) : 0);
+  const out = {};
+  for (const type of ['kanji', 'vocabulary']) {
+    const [a, b] = halves.map((h) => fitModel(rows, h, type, 150));
+    const all = stepUp(pearson(midRanks([...a.w]), midRanks([...b.w])));
+    const blocks = [];
+    for (let from = 1; from <= 60; from += 10) {
+      const idx = a.items.map((_, i) => i).filter((i) => a.items[i].level2022 >= from && a.items[i].level2022 < from + 10);
+      blocks.push([from, stepUp(pearson(midRanks(idx.map((i) => a.w[i])), midRanks(idx.map((i) => b.w[i]))))]);
     }
-    for (const [cohort, items] of cohorts) {
-      if (items.length < 5) continue;
-      const rk = (h) => midRanks(items.map((r) => h.get(`${r.type}:${normalizeCharacters(r.characters)}`) || 0));
-      const rho = pearson(rk(halves[0]), rk(halves[1]));
-      sums.set(cohort, (sums.get(cohort) || 0) + rho / splits);
-    }
+    out[type] = { all, blocks };
   }
-  return new Map([...sums].map(([c, rho]) => [c, rho > 0 ? (2 * rho) / (1 + rho) : 0]));
+  return out;
 }
 
-function groupCohorts(rows) {
-  const cohorts = new Map();
+const round3 = (x) => Number(x.toPrecision(3));
+
+// Compact encoding, one string per type and current level: items sorted by id,
+// "<id delta>.<votes>[.<reading share>][~<2022 level, if different>]" in base 36,
+// comma-separated. exposure[type][l - 1] belongs to 2022 level l.
+export function encode(rows, learners, exposure) {
+  const out = { snapshot: SNAPSHOT, learners: learners.slice(1), exposure, kanji: {}, vocabulary: {} };
+  const groups = new Map();
   for (const r of rows) {
-    const key = `${r.type}:${r.level2022}`;
-    if (!cohorts.has(key)) cohorts.set(key, []);
-    cohorts.get(key).push(r);
+    const key = `${r.type}:${r.level}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(r);
   }
-  return cohorts;
-}
-
-// Compact encoding, one string per cohort (type + 2022 level): items sorted by id,
-// "<id delta>.<votes>[.<reading share>]" in base 36, comma-separated.
-// reliability: Map "type:level" -> split-half reliability, stored per type as a 60-slot array (x100).
-export function encode(rows, learners, reliability) {
-  const rel = (type) => Array.from({ length: 60 }, (_, i) => Math.round((reliability.get(`${type}:${i + 1}`) ?? 0) * 100));
-  const out = { snapshot: SNAPSHOT, learners: learners.slice(1), reliability: { kanji: rel('kanji'), vocabulary: rel('vocabulary') }, kanji: {}, vocabulary: {} };
-  for (const [key, items] of groupCohorts(rows)) {
+  for (const [key, items] of [...groups].sort((a, b) => a[0].localeCompare(b[0], 'en', { numeric: true }))) {
     const [type, level] = key.split(':');
     let prev = 0;
     out[type][level] = items
       .sort((a, b) => a.id - b.id)
       .map((r) => {
-        const parts = [(r.id - prev).toString(36), r.votes.toString(36)];
-        if (r.readingShare != null) parts.push(r.readingShare.toString(36));
+        let entry = [(r.id - prev).toString(36), r.votes.toString(36)].concat(r.readingShare != null ? [r.readingShare.toString(36)] : []).join('.');
+        if (r.level2022 !== r.level) entry += `~${r.level2022.toString(36)}`;
         prev = r.id;
-        return parts.join('.');
+        return entry;
       })
       .join(',');
   }
@@ -253,20 +305,27 @@ async function main() {
   const items2022 = JSON.parse(await readFile(new URL('data/wk-2022-items.json', ROOT), 'utf8')).items;
   const { rows, gone, unmatchedVotes } = buildItems(users, subjects, items2022);
   const learners = learnersPerLevel(users);
-  const rel = reliability(users, rows);
+  const models = Object.fromEntries(['kanji', 'vocabulary'].map((type) => [type, fitModel(rows, users, type)]));
+  const exposure = Object.fromEntries(Object.entries(models).map(([type, m]) => [type, [...m.exposure].slice(1).map(round3)]));
 
   const scriptUrl = new URL('main.js', ROOT);
   const script = await readFile(scriptUrl, 'utf8');
   const start = script.indexOf(BEGIN);
   const end = script.indexOf(END);
   if (start < 0 || end < start) throw new Error(`main.js has no ${BEGIN} … ${END} block`);
-  const block = `${BEGIN} generated by tools/build-data.mjs from the ${SNAPSHOT} snapshot; do not edit by hand\n  const DIFFICULTY_DATA = ${JSON.stringify(encode(rows, learners, rel))};\n  `;
+  const block = `${BEGIN} generated by tools/build-data.mjs from the ${SNAPSHOT} snapshot; do not edit by hand\n  const DIFFICULTY_DATA = ${JSON.stringify(encode(rows, learners, exposure))};\n  `;
   await writeFile(scriptUrl, script.slice(0, start) + block + script.slice(end));
 
   const moved = rows.filter((r) => r.level !== r.level2022).length;
   console.log(`users ${users.length} · items ${rows.length} (moved level since 2022: ${moved}) · no longer on WK: ${gone.length} · votes for items outside the 2022 list: ${unmatchedVotes}`);
 
   if (process.argv.includes('--report')) {
+    // The userscript's own ranking code, on the data block just written.
+    const core = createRequire(import.meta.url)('../main.js');
+    const index = core.buildCommunityIndex(core.DIFFICULTY_DATA);
+    const rank = core.createRanker(index);
+    const rel = reliability(users, rows);
+    const pct = (n, d) => `${Math.round((n / d) * 100)}%`;
     const lines = [
       '# Community data report',
       '',
@@ -274,30 +333,59 @@ async function main() {
       '',
       `- Users with a level: ${users.length}`,
       `- 2022 items still on WaniKani: ${rows.length} (kanji ${rows.filter((r) => r.type === 'kanji').length}, vocabulary ${rows.filter((r) => r.type === 'vocabulary').length})`,
-      `- Items that have moved level since 2022: ${moved}. They are ranked against their 2022 level-mates, the users who saw them then.`,
+      `- Items that have moved level since 2022: ${moved}`,
       `- 2022 items no longer on WaniKani: ${gone.length}`,
       `- Votes for items outside the 2022 list: ${unmatchedVotes}`,
       '',
-      '## How reliable is the ranking inside a level?',
+      '## Recency',
       '',
-      'Split-half reliability: the users are split into two random halves, each half ranks the level\'s items by votes, and the two rankings are correlated (Spearman, 20 splits, stepped up to the full sample with Spearman-Brown). 1 means both halves agree perfectly; 0 means the ranking is noise.',
+      `How much more likely an item is to be named "worst" when it was learned 0, 1, 2… levels before the user's level, compared with an item learned ${RECENCY_LEVELS} or more levels before:`,
       '',
-      '| Levels | Type | Learners who reached the level | Median votes per item | Items with 0 votes | Reliability |',
-      '|---|---|---|---|---|---|',
+      '| Type | ' + Array.from({ length: RECENCY_LEVELS + 1 }, (_, k) => (k === RECENCY_LEVELS ? `${k}+` : k)).join(' | ') + ' |',
+      '|---|' + '---|'.repeat(RECENCY_LEVELS + 1),
+      ...Object.entries(models).map(([type, m]) => `| ${type} | ${[...m.recency].map((x) => x.toFixed(1)).join(' | ')} |`),
+      '',
+      '## Average difficulty by level',
+      '',
+      'Mean log w of the items of each block of levels (0 = an item with w = 1). After the recency correction there is no clear upward trend for kanji; late vocabulary is somewhat harder.',
+      '',
+      '| Levels | kanji | vocabulary |',
+      '|---|---|---|',
     ];
-    const cohorts = groupCohorts(rows);
-    for (const type of ['kanji', 'vocabulary']) {
-      for (let from = 1; from <= 60; from += 5) {
-        const levels = [from, from + 1, from + 2, from + 3, from + 4];
-        const items = levels.flatMap((l) => cohorts.get(`${type}:${l}`) || []);
-        const rels = levels.map((l) => rel.get(`${type}:${l}`)).filter((x) => x != null);
-        const votes = items.map((r) => r.votes).sort((a, b) => a - b);
-        lines.push(
-          `| ${from}–${from + 4} | ${type} | ${learners[from + 4].toLocaleString('en')}–${learners[from].toLocaleString('en')} | ${votes[Math.floor(votes.length / 2)]} | ${Math.round((votes.filter((v) => v === 0).length / votes.length) * 100)}% | ${(rels.reduce((s, x) => s + x, 0) / rels.length).toFixed(2)} |`,
-        );
-      }
+    for (let from = 1; from <= 60; from += 10) {
+      const mean = (m) => {
+        const v = m.items.map((r, i) => [r.level2022, Math.log(m.w[i])]).filter(([l]) => l >= from && l < from + 10).map(([, x]) => x);
+        return (v.reduce((s, x) => s + x, 0) / v.length).toFixed(2);
+      };
+      lines.push(`| ${from}–${from + 9} | ${mean(models.kanji)} | ${mean(models.vocabulary)} |`);
     }
-    lines.push('', '## Per-level reliability', '', '```json', JSON.stringify(Object.fromEntries([...rel].map(([k, v]) => [k, +v.toFixed(2)]))), '```', '');
+    lines.push(
+      '',
+      '## Reliability',
+      '',
+      'Split-half reliability: the model is fitted on two random halves of the users and the two rankings are correlated (Spearman, stepped up to the full sample with Spearman-Brown). 1 means both halves agree perfectly; 0 means the ranking is noise.',
+      '',
+      '| | All items | ' + rel.kanji.blocks.map(([from]) => `${from}–${from + 9}`).join(' | ') + ' |',
+      '|---|---|' + '---|'.repeat(rel.kanji.blocks.length),
+      ...Object.entries(rel).map(([type, r]) => `| ${type} | ${r.all.toFixed(2)} | ${r.blocks.map(([, x]) => x.toFixed(2)).join(' | ')} |`),
+      '',
+      '## Uncertainty',
+      '',
+      'Each item\'s likely range (90%) compared with everything up to its own level. The userscript shows a band when the range covers one or two bands, and "not enough data" when it covers three or four.',
+      '',
+      '| Type | 1 band | 2 bands | 3–4 bands (not enough data) |',
+      '|---|---|---|---|',
+    );
+    for (const type of ['kanji', 'vocabulary']) {
+      const spans = [0, 0, 0];
+      const items = [...index.values()].filter((c) => c.type === type);
+      for (const c of items) {
+        const r = rank(c.id, c.level);
+        spans[Math.min(2, r.bandHi - r.bandLo)]++;
+      }
+      lines.push(`| ${type} | ${pct(spans[0], items.length)} | ${pct(spans[1], items.length)} | ${pct(spans[2], items.length)} |`);
+    }
+    lines.push('');
     await mkdir(new URL('docs/', ROOT), { recursive: true });
     await writeFile(new URL('docs/data-report.md', ROOT), lines.join('\n'));
     console.log('wrote docs/data-report.md');
