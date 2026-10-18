@@ -7,6 +7,8 @@ A userscript for [WaniKani](https://www.wanikani.com) that shows how hard each k
 
 Difficulty comes in four bands, **Easy**, **Medium**, **Hard** and **Very hard**, drawn as one to four rising bars. Because of the bars, the bands are readable without color.
 
+![A review: the badge in the header and its details](docs/screenshots/review.png)
+
 ## Where it shows
 
 | Where | What |
@@ -23,6 +25,14 @@ Hover over or click a badge to see the details:
 - where the item sits among everything up to your level, with its likely range shaded
 - how many learners named it their worst, and whether they got the meaning or the reading wrong
 - your own accuracy, your weak side (meaning or reading), and whether it is a leech
+
+| Lesson picker | Level page |
+|---|---|
+| ![Dots on the lesson picker](docs/screenshots/lesson-picker.png) | ![Dots on a level page](docs/screenshots/level-page.png) |
+
+| Item page | Item info section |
+|---|---|
+| ![Badge and details on an item page](docs/screenshots/item-page.png) | ![The Difficulty section: not enough data, and your own difficulty](docs/screenshots/item-info-section.png) |
 
 ## How difficulty is calculated
 
@@ -72,6 +82,8 @@ Open the settings from the badge popover (**Settings**), from WaniKani's scripts
 - the color set: traffic light, colorblind-safe or monochrome
 
 Settings from v0.23 carry over where they still apply. For example, "Nowhere" in reviews becomes "Never".
+
+<img src="docs/screenshots/settings.png" alt="The settings dialog" width="360">
 
 ## Development
 

@@ -905,7 +905,7 @@
     .wkid-kicker { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #888; }
 
     .wkid-tile { position: relative; }
-    .wkid-dot { position: absolute; top: -3px; right: -3px; z-index: 1; width: 8px; height: 8px; border-radius: 50%;
+    .wkid-dot { position: absolute; top: -3px; right: -3px; width: 8px; height: 8px; border-radius: 50%;
       background: var(--wkid-c); box-shadow: 0 0 0 1.5px #fff; }
     .lesson-picker__subject.wkid-picker-item { opacity: 1; }
     .lesson-picker__subject.wkid-picker-item[aria-selected="false"] > .subject-character { opacity: 0.5; }
@@ -937,19 +937,19 @@
     .wkid-link { font: inherit; padding: 0; margin: 0; background: none; border: 0; cursor: pointer; }
     .wkid-foot a:hover, .wkid-link:hover { text-decoration: underline; }
 
-    .wkid-dialog { width: min(460px, 92vw); border: none; border-radius: 12px; padding: 20px 22px 16px; font: 14px/1.4 "Noto Sans", sans-serif;
+    .wkid-dialog { width: min(460px, 92vw); border: none; border-radius: 12px; padding: 16px 22px 12px; font: 14px/1.4 "Noto Sans", sans-serif;
       color: #222; background: #fff; box-shadow: 0 12px 40px rgb(0 0 0 / 0.25); }
     .wkid-dialog::backdrop { background: rgb(0 0 0 / 0.45); }
     .wkid-dialog h2 { margin: 0 0 6px; font-size: 18px; font-weight: 600; }
-    .wkid-dialog-section { padding: 12px 0 4px; border-top: 1px solid #e6e6e6; }
+    .wkid-dialog-section { padding: 10px 0 2px; border-top: 1px solid #e6e6e6; }
     .wkid-dialog-section:first-of-type { border-top: 0; }
     .wkid-dialog-section h3 { margin: 0 0 10px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #777; }
-    .wkid-check { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 10px; cursor: pointer; }
+    .wkid-check { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 7px; cursor: pointer; line-height: 1.3; }
     .wkid-check input { margin: 3px 0 0; }
     .wkid-check small { display: block; }
-    .wkid-field { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 10px; }
+    .wkid-field { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 8px; }
     .wkid-field-label { font-weight: 600; }
-    .wkid-sub { margin: -4px 0 12px 24px; }
+    .wkid-sub { margin: -2px 0 9px 24px; }
     .wkid-sub .wkid-field-label { font-weight: 400; color: #555; }
     .wkid-disabled { opacity: 0.5; }
     .wkid-dialog select { font: inherit; padding: 5px 8px; margin: 0; border: 1px solid #cfcfcf; border-radius: 6px; background: #fff; color: inherit; height: auto; max-width: 60%; }
