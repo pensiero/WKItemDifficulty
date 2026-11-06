@@ -36,6 +36,6 @@ Details: [How difficulty is calculated](https://github.com/pensiero/WKItemDiffic
 ### Install
 
 Requires Tampermonkey; the [Open Framework](https://community.wanikani.com/t/instructions-installing-wanikani-open-framework/28549) is recommended.
-[Install from Greasy Fork](GREASYFORK_URL). It is a separate script from the original, so disable the original first; your review setting carries over.
+[Install from Greasy Fork](https://greasyfork.org/en/scripts/604032-wanikani-item-difficulty-indicator-v2). It is a separate script from the original, so disable the original first; your review setting carries over.
 
 **LLM disclosure:** this version was written with substantial help from an LLM (Claude Code), then reviewed and tested by me.

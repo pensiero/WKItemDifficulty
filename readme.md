@@ -80,7 +80,7 @@ Settings and installs are separate from the original, so disable the original to
 1. Install [Tampermonkey](https://www.tampermonkey.net/) (or Violentmonkey).
    - **Chrome / Edge 138+:** open Tampermonkey's extension details and turn on **Allow User Scripts**.
 2. Recommended: install the [WaniKani Open Framework](https://community.wanikani.com/t/instructions-installing-wanikani-open-framework/28549). Without it, the script still shows difficulty in lessons, reviews, item pages and the lesson picker. Your own difficulty, the dots on item grids and the entry in WaniKani's scripts menu need the framework.
-3. Install **WaniKani Item Difficulty Indicator v2** from [Greasy Fork](GREASYFORK_URL).
+3. Install **WaniKani Item Difficulty Indicator v2** from [Greasy Fork](https://greasyfork.org/en/scripts/604032-wanikani-item-difficulty-indicator-v2).
 4. If you have the original *WaniKani Item Difficulty* installed, disable or remove it, or you will see two badges.
 
 ## Settings
