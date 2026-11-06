@@ -1,9 +1,9 @@
 // ==UserScript==
-// @name         WaniKani Item Difficulty
-// @namespace    wk-item-diff
+// @name         WaniKani Item Difficulty Indicator v2
+// @namespace    wk-item-diff-v2
 // @version      1.0.0
 // @description  Shows how hard each kanji and vocabulary item is, for other learners (2022 data from ~89k WaniKani users) and for you (your own reviews), in lessons, reviews, item pages, the lesson picker and item grids.
-// @author       saraqael, pensiero (with changes by Inserio)
+// @author       pensiero (based on the original by saraqael, with changes by Inserio)
 // @license      MIT
 // @match        https://www.wanikani.com/*
 // @match        https://preview.wanikani.com/*
@@ -14,7 +14,7 @@
 // @grant        GM_registerMenuCommand
 // @grant        unsafeWindow
 // @homepageURL  https://community.wanikani.com/t/userscript-item-difficulty-indicator/59876
-// @supportURL   https://github.com/saraqael-m/WKItemDifficulty/issues
+// @supportURL   https://github.com/pensiero/WKItemDifficulty/issues
 // ==/UserScript==
 
 /* global GM_getValue, GM_setValue, GM_registerMenuCommand, unsafeWindow */
@@ -334,7 +334,7 @@
 
   const page = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
   const SCRIPT_NAME = 'WaniKani Item Difficulty';
-  const HOW_IT_WORKS_URL = 'https://github.com/saraqael-m/WKItemDifficulty#how-difficulty-is-calculated';
+  const HOW_IT_WORKS_URL = 'https://github.com/pensiero/WKItemDifficulty#how-difficulty-is-calculated';
   const PERSONAL_TTL_MS = 10 * 60 * 1000;
   const community = buildCommunityIndex(DIFFICULTY_DATA);
   const rankCommunity = createRanker(community);

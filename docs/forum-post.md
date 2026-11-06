@@ -29,9 +29,11 @@ It uses the same 2022 data (88,968 learners' worst kanji and vocab), but turns i
 - **Your difficulty**, ranked against the other items you've reviewed, plus a leech tag (needs the Open Framework).
 - Colorblind-safe and monochrome palettes. The bars are readable without color.
 
-Details: [How difficulty is calculated](https://github.com/saraqael-m/WKItemDifficulty#how-difficulty-is-calculated)
+Details: [How difficulty is calculated](https://github.com/pensiero/WKItemDifficulty#how-difficulty-is-calculated)
 
 ### Install
 
 Requires Tampermonkey; the [Open Framework](https://community.wanikani.com/t/instructions-installing-wanikani-open-framework/28549) is recommended.
-[Install from Greasy Fork](https://greasyfork.org/scripts/457095-wanikani-item-difficulty). If you already have it, it updates by itself, and your review setting carries over.
+[Install from Greasy Fork](GREASYFORK_URL). It is a separate script from the original, so disable the original first; your review setting carries over.
+
+**LLM disclosure:** this version was written with substantial help from an LLM (Claude Code), then reviewed and tested by me.

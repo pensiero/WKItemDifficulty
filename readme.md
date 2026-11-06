@@ -1,4 +1,4 @@
-# WaniKani Item Difficulty
+# WaniKani Item Difficulty Indicator v2
 
 A userscript for [WaniKani](https://www.wanikani.com) that shows how hard each kanji and vocabulary item is:
 
@@ -70,7 +70,8 @@ Up to v0.23 the score was the item's share of votes divided by the most-voted it
 1. Install [Tampermonkey](https://www.tampermonkey.net/) (or Violentmonkey).
    - **Chrome / Edge 138+:** open Tampermonkey's extension details and turn on **Allow User Scripts**.
 2. Recommended: install the [WaniKani Open Framework](https://community.wanikani.com/t/instructions-installing-wanikani-open-framework/28549). Without it, the script still shows difficulty in lessons, reviews, item pages and the lesson picker. Your own difficulty, the dots on item grids and the entry in WaniKani's scripts menu need the framework.
-3. Install **WaniKani Item Difficulty** from [Greasy Fork](https://greasyfork.org/scripts/457095-wanikani-item-difficulty).
+3. Install **WaniKani Item Difficulty Indicator v2** from [Greasy Fork](GREASYFORK_URL).
+4. If you have the original *WaniKani Item Difficulty* installed, disable or remove it, or you will see two badges.
 
 ## Settings
 
@@ -81,7 +82,7 @@ Open the settings from the badge popover (**Settings**), from WaniKani's scripts
 - whether dots show other learners' difficulty or yours
 - the color set: traffic light, colorblind-safe or monochrome
 
-Settings from v0.23 carry over where they still apply. For example, "Nowhere" in reviews becomes "Never".
+Review settings from v0.23 carry over where they still apply. For example, "Nowhere" in reviews becomes "Never".
 
 <img src="docs/screenshots/settings.png" alt="The settings dialog" width="360">
 
@@ -104,4 +105,10 @@ npm run build-data     # rebuild the data block in main.js and docs/data-report.
 - [WK Item Info Injector](https://greasyfork.org/scripts/430565) by Sinyaven
 - [WaniKani Open Framework](https://github.com/rfindley/wanikani-open-framework) by rfindley
 
-MIT license.
+## AI disclosure
+
+This version was written with substantial help from an LLM (Claude, via Claude Code): the code, tests and data pipeline were generated with AI assistance and reviewed and tested by the maintainer. It is published as a separate script because the original author prefers not to host LLM-generated code.
+
+## License
+
+MIT, see [LICENSE](LICENSE).

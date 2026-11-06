@@ -12,9 +12,9 @@ test('version is semver', () => {
   assert.match(meta('version')[0], /^\d+\.\d+\.\d+$/);
 });
 
-test('name and namespace stay the same, so installs update in place', () => {
-  assert.deepEqual(meta('name'), ['WaniKani Item Difficulty']);
-  assert.deepEqual(meta('namespace'), ['wk-item-diff']);
+test('name and namespace are stable, so installs update in place', () => {
+  assert.deepEqual(meta('name'), ['WaniKani Item Difficulty Indicator v2']);
+  assert.deepEqual(meta('namespace'), ['wk-item-diff-v2']);
 });
 
 test('every GM_ function used is granted, and nothing extra', () => {
