@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         WaniKani Item Difficulty Indicator v2
 // @namespace    wk-item-diff-v2
-// @version      1.0.0
-// @description  Shows how hard each kanji and vocabulary item is, for other learners (2022 data from ~89k WaniKani users) and for you (your own reviews), in lessons, reviews, item pages, the lesson picker and item grids.
+// @version      2.0.0
+// @description  v2 of saraqael's Item Difficulty Indicator, rebuilt for the current WaniKani UI. Shows how hard each kanji and vocabulary item is, for other learners (2022 data from ~89k WaniKani users) and for you (your own reviews), in lessons, reviews, item pages, the lesson picker and item grids.
 // @author       pensiero (based on the original by saraqael, with changes by Inserio)
 // @license      MIT
 // @match        https://www.wanikani.com/*

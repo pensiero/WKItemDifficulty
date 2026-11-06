@@ -1,5 +1,5 @@
 {
-  "name": "wk-item-difficulty",
+  "name": "wk-item-difficulty-v2",
   "private": true,
   "description": "Dev tooling for main.js (tests and the data build; the userscript has no build step).",
   "license": "MIT",

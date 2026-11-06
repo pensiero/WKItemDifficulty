@@ -4,7 +4,9 @@
 
 ---
 
-## v1.0: a modernized Item Difficulty 🟢🟡🟠🔴
+## Item Difficulty Indicator v2: a modernized Item Difficulty 🟢🟡🟠🔴
+
+v2 of saraqael's original script, as a separate Greasy Fork script. It uses the same 2022 data; the original stopped matching the current WaniKani UI and showed most items as green, so the display and the calculation were rebuilt. It is a separate script because the original author prefers not to host LLM-generated code (see the disclosure below).
 
 The script works again with the current WaniKani UI and shows up in more places:
 

@@ -5,6 +5,8 @@ A userscript for [WaniKani](https://www.wanikani.com) that shows how hard each k
 - **for other learners**: compared with everything up to your level, from how often learners named it as their single worst kanji or vocab (2022 data from 88,968 WaniKani users)
 - **for you**: compared with the other items you have reviewed, from your own accuracy, plus whether it has become a leech
 
+**This is v2 of saraqael's [Item Difficulty Indicator](https://greasyfork.org/scripts/457095-wanikani-item-difficulty)**, rebuilt on the same 2022 community data. See [what changed and why](#whats-new-in-v2-compared-with-the-original). It is a separate script from the original; it was maintained here because the original author prefers not to host LLM-generated code (see [AI disclosure](#ai-disclosure)).
+
 Difficulty comes in four bands, **Easy**, **Medium**, **Hard** and **Very hard**, drawn as one to four rising bars. Because of the bars, the bands are readable without color.
 
 ![A review: the badge in the header and its details](docs/screenshots/review.png)
@@ -61,9 +63,17 @@ After this correction, late kanji are not harder on average than early ones; lat
 
 **Your difficulty** uses your WaniKani review statistics, once you have answered an item at least 4 times. Your accuracy on the item is compared with your other reviewed items of the same type (radicals, kanji or vocabulary), with the same bands. So it calibrates itself: 85% correct is *Hard* if most of your items are above 85%. A few pseudo-answers at your overall accuracy keep 3 out of 4 from outranking 70 out of 100. The **leech** tag is separate: wrong answers on the meaning or the reading, divided by the current streak to the power of 1.5, is 1.5 or more (as in the community's leech scripts).
 
-### Changes from v0.23
+## What's new in v2 compared with the original
 
-Up to v0.23 the score was the item's share of votes divided by the most-voted item of its level, times 10. One outlier per level then pushed most items to the bottom: 60% of vocabulary showed as green. Items were only compared within their own level, and items with no votes looked easy even when nobody could tell. The votes are the same; v1.0 changes how they are turned into a difficulty.
+The original (up to v0.23.1) stopped matching the WaniKani UI and squashed most items into one color. v2 keeps its data and idea and changes the following.
+
+- **Calculation.** Up to v0.23 the score was the item's share of votes divided by the most-voted item of its level, times 10. One outlier per level then pushed most items to the bottom: 60% of vocabulary showed as green. Items were only compared within their own level, and items with no votes looked easy even when nobody could tell. The votes are the same; v2 changes how they are turned into a difficulty: compared across levels, with four percentile bands, likely ranges and an explicit *Not enough data*.
+- **More places.** Item pages, the Difficulty info section, the lesson picker and item grids, besides lessons and reviews.
+- **Your own difficulty** from your review statistics, with a leech tag.
+- **Accessibility.** Colorblind-safe and monochrome palettes; the bars carry the band without color.
+- **Maintenance.** A settings dialog, Turbo navigation support, unit and metadata tests, and a reproducible data build.
+
+Settings and installs are separate from the original, so disable the original to avoid two badges.
 
 ## Install
 
@@ -99,9 +109,9 @@ npm run build-data     # rebuild the data block in main.js and docs/data-report.
 
 ## Credits
 
-- saraqael: the original script and the 2022 dataset
+- saraqael: the original [Item Difficulty Indicator](https://github.com/saraqael-m/WKItemDifficulty) and the 2022 dataset. v2 builds on it and is not endorsed by the original author.
 - Inserio: v0.23.1 (Turbo navigation, gradients)
-- pensiero: v1.0
+- pensiero: v2.0 (with Claude Code, see AI disclosure)
 - [WK Item Info Injector](https://greasyfork.org/scripts/430565) by Sinyaven
 - [WaniKani Open Framework](https://github.com/rfindley/wanikani-open-framework) by rfindley
 
